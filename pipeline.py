@@ -9,11 +9,55 @@ Both funnel into shared fill/satin stitch generation and a DST/EXP-safe
 chained stitch emitter (no single stitch/jump step may exceed the format's
 ~12.1mm per-step limit, or the design corrupts on import).
 """
+import os
+import subprocess
+import tempfile
 import numpy as np
 import cv2
 import pyembroidery
 from pyembroidery import EmbThread
 from skimage.morphology import skeletonize
+
+_POTRACE_CHECKED = {"available": None}
+
+
+def potrace_available():
+    if _POTRACE_CHECKED["available"] is None:
+        from shutil import which
+        _POTRACE_CHECKED["available"] = which("potrace") is not None
+    return _POTRACE_CHECKED["available"]
+
+
+def potrace_clean_mask(mask, turdsize=2, alphamax=1.0):
+    """Clean a binary mask by round-tripping it through potrace (bitmap ->
+    vector -> anti-aliased raster). This is proper corner-preserving curve
+    fitting and speckle suppression, not blunt pixel morphology (the
+    open/close kernels used elsewhere): it removes stray noise pixels AND
+    smooths jagged boundaries in one principled pass. Falls back to the
+    original mask untouched if potrace isn't installed on this machine, so
+    the pipeline degrades gracefully rather than crashing.
+    """
+    if not potrace_available() or not mask.any():
+        return mask
+    h, w = mask.shape
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_path = os.path.join(tmpdir, "in.pgm")
+            out_path = os.path.join(tmpdir, "out.pgm")
+            cv2.imwrite(in_path, (mask.astype(np.uint8) * 255))
+            subprocess.run(
+                ["potrace", "-b", "pgm", "-t", str(turdsize), "-a", str(alphamax),
+                 in_path, "-o", out_path],
+                check=True, capture_output=True, timeout=15,
+            )
+            cleaned = cv2.imread(out_path, cv2.IMREAD_GRAYSCALE)
+            if cleaned is None:
+                return mask
+            if cleaned.shape != (h, w):
+                cleaned = cv2.resize(cleaned, (w, h), interpolation=cv2.INTER_NEAREST)
+            return cleaned > 127
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return mask
 
 SCALE = 1.2          # 0.1mm units per source-image pixel
 SAFE_MAX = 80.0       # max stitch/jump step, in 0.1mm units (hard format limit is 121)
@@ -421,8 +465,7 @@ def segment_color_design(image_bgr):
     regions = []
     for lbl in range(K):
         color_mask = (label_map == lbl).astype(np.uint8)
-        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, np.ones((11, 11), np.uint8))
+        color_mask = potrace_clean_mask(color_mask.astype(bool)).astype(np.uint8)
         num, comp_labels, stats, _ = cv2.connectedComponentsWithStats(color_mask, connectivity=8)
         for comp_id in range(1, num):
             if stats[comp_id, cv2.CC_STAT_AREA] < MIN_AREA_COLOR:
