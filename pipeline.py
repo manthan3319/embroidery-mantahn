@@ -22,7 +22,15 @@ MIN_AREA_LINEART = 60
 
 
 def detect_pipeline_type(image_bgr):
-    """Low saturation over the DESIGN area => line-art; else colorful photo.
+    """Route to "color" (k-means, multi-color photo/graphic), "lineart"
+    (thin outline strokes enclosing fillable areas -- a coloring-page style
+    drawing), or "silhouette" (a solid-filled dark shape/logo -- the dark
+    area itself IS the design to stitch, not an outline around something
+    else). Getting line-art vs silhouette wrong is not a small miss: the
+    line-art path only fills white pockets ENCLOSED by ink, so if the ink
+    itself is the thick solid subject (a logo, a monogram) almost nothing
+    survives -- see the gada+text logo case that returned a single 21-stitch
+    region.
 
     Must isolate real foreground before measuring saturation: a plain
     gray<240 cutoff over the whole frame lets a textured/woven fabric
@@ -40,7 +48,21 @@ def detect_pipeline_type(image_bgr):
     if fg.sum() < 100:
         return "color"
     median_sat = np.median(hsv[:, :, 1][fg])
-    return "lineart" if median_sat < 30 else "color"
+    if median_sat >= 30:
+        return "color"
+
+    # Grayscale/low-saturation design: distinguish thin outline strokes from a
+    # solid silhouette by how THICK the dark ink is. A coloring-page outline
+    # stays a few px wide throughout; a logo/silhouette has large interior
+    # areas far from any edge. distanceTransform gives, per ink pixel, the
+    # distance to the nearest non-ink pixel -- half the local stroke width.
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    _, ink = cv2.threshold(gray, 205, 255, cv2.THRESH_BINARY_INV)
+    if ink.sum() < 100:
+        return "lineart"
+    dist = cv2.distanceTransform(ink, cv2.DIST_L2, 5)
+    thick_fraction = (dist > 6).sum() / (ink > 0).sum()
+    return "silhouette" if thick_fraction > 0.12 else "lineart"
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +141,30 @@ def satin_fill(mask, step=2.4):
     return stitches
 
 
+def local_thickness(mask):
+    """80th-percentile local full-thickness via distance transform -- robust
+    to complex/branching shapes (e.g. connected calligraphy strokes) where a
+    simple area/(PCA-axis length) ratio is misleading: a long connected word
+    has a small average width by that formula only when it happens to be a
+    clean ribbon, but a multi-letter blob's bounding-axis length has little
+    to do with how thick any individual stroke actually is.
+
+    Uses a high percentile, not the median: EVERY shape (thin or wide) has
+    pixels close to its boundary, so the median is dragged down by edge-
+    adjacent pixels regardless of whether the shape has real bulk. Only a
+    genuinely wide region has a deep, far-from-any-edge core reaching a high
+    distance value -- that's what should decide fill vs satin.
+    """
+    dist = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
+    vals = dist[mask]
+    return 2 * np.percentile(vals, 80) if len(vals) else 0.0
+
+
 def generate_stitches(mask):
     stats_ = region_shape_stats(mask)
     if stats_ is not None:
         _, _, _, _, _, length, avg_width = stats_
-        if avg_width < WIDTH_THRESHOLD and length > 10:
+        if local_thickness(mask) < WIDTH_THRESHOLD and length > 10:
             s = satin_fill(mask)
             if len(s) >= 4:
                 return s, "satin"
@@ -287,6 +328,33 @@ def segment_lineart_design(image_bgr):
 
 
 # ---------------------------------------------------------------------------
+# Strategy 3: solid silhouette / logo -> the dark shape itself is the design
+# ---------------------------------------------------------------------------
+
+def segment_silhouette_design(image_bgr):
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+
+    _, ink = cv2.threshold(gray, 205, 255, cv2.THRESH_BINARY_INV)
+    # No closing here (unlike the other strategies): a silhouette's thin white
+    # gaps -- the bands between concentric mace rings, the counters inside
+    # letters -- are real negative space in the source art, not noise. Closing
+    # them would fuse rings/letters into a featureless blob.
+
+    num, comp_labels, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+
+    flat_rgb = image_rgb.reshape(-1, 3).astype(np.float64)
+    regions = []
+    for lbl in range(1, num):
+        if stats[lbl, cv2.CC_STAT_AREA] < MIN_AREA_LINEART:
+            continue
+        mask = comp_labels == lbl
+        color = flat_rgb[mask.reshape(-1)].mean(axis=0)  # real sampled color, not hardcoded black
+        regions.append((color, mask))
+    return regions
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -298,6 +366,8 @@ def process_image(image_path, out_dir, base_name):
     kind = detect_pipeline_type(image_bgr)
     if kind == "lineart":
         regions = segment_lineart_design(image_bgr)
+    elif kind == "silhouette":
+        regions = segment_silhouette_design(image_bgr)
     else:
         regions = segment_color_design(image_bgr)
 
