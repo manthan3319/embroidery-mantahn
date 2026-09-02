@@ -384,6 +384,19 @@ def segment_color_design(image_bgr):
     dist_to_bg = np.linalg.norm(smoothed.astype(np.float64) - bg_ref, axis=2)
     is_bg = dist_to_bg < 22.0
 
+    # A dense ornamental design has fine white/pale NEGATIVE-SPACE gaps between
+    # its own elements (the slit between herringbone stripes, the highlight
+    # dot inside a bead) -- real background showing through, not just the
+    # margin around the design. Those gaps sit close enough to the corner
+    # background color, but bilateral smoothing over a wide kernel (d=25)
+    # bleeds a little surrounding teal/gold into any gap narrower than that,
+    # pushing some pixels just past the corner-distance cutoff. Catch them by
+    # what they actually look like -- light AND desaturated -- rather than
+    # only by distance to one reference color, or they survive as their own
+    # stray cluster and get stitched in pale grey thread.
+    hsv = cv2.cvtColor(smoothed, cv2.COLOR_RGB2HSV)
+    is_bg = is_bg | ((hsv[:, :, 2] > 215) & (hsv[:, :, 1] < 25))
+
     # Cluster in LAB with lightness heavily downweighted. A photographed satin-stitch
     # design has real light/dark shading WITHIN a single petal/element (thread sheen,
     # stitch-direction reflectance) -- clustering on raw RGB/lightness splits one
