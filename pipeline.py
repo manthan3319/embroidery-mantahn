@@ -22,13 +22,24 @@ MIN_AREA_LINEART = 60
 
 
 def detect_pipeline_type(image_bgr):
-    """Low saturation over the non-background area => line-art; else colorful photo."""
+    """Low saturation over the DESIGN area => line-art; else colorful photo.
+
+    Must isolate real foreground before measuring saturation: a plain
+    gray<240 cutoff over the whole frame lets a textured/woven fabric
+    background (e.g. beige linen, median gray ~222) dominate the pixel
+    count and drag the median saturation down, misrouting a colorful
+    photographed design into the line-art path. Reuse the same
+    corner-sampled background-distance test segment_color_design relies
+    on so the saturation check only looks at genuine foreground pixels.
+    """
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    non_white = gray < 240
-    if non_white.sum() < 100:
+    h, w = image_bgr.shape[:2]
+    sm = cv2.medianBlur(image_bgr, 5)
+    bg_ref = sm[[0, 0, h - 1, h - 1], [0, w - 1, 0, w - 1]].astype(np.float64).mean(axis=0)
+    fg = np.linalg.norm(sm.astype(np.float64) - bg_ref, axis=2) >= 22.0
+    if fg.sum() < 100:
         return "color"
-    median_sat = np.median(hsv[:, :, 1][non_white])
+    median_sat = np.median(hsv[:, :, 1][fg])
     return "lineart" if median_sat < 30 else "color"
 
 
