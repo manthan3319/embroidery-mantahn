@@ -1,0 +1,7 @@
+uploads/
+outputs/
+*.jpeg
+*.jpg
+*.png
+__pycache__/
+*.pyc

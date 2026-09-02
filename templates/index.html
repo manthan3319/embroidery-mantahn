@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Embroidery Auto-Digitizer</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 22px; }
+  .drop { border: 2px dashed #bbb; border-radius: 10px; padding: 40px; text-align: center; color: #666; }
+  input[type=file] { margin-top: 16px; }
+  button { margin-top: 20px; padding: 10px 22px; font-size: 15px; background: #2b6cb0; color: white; border: none; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #245a94; }
+  .error { color: #c0392b; margin-top: 14px; }
+  .hint { color: #888; font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Embroidery Auto-Digitizer</h1>
+  <p>Ek photo ya line-art design upload karo — automatically embroidery stitch file (EXP / DST / PES) generate hogi.</p>
+  <form action="/process" method="post" enctype="multipart/form-data">
+    <div class="drop">
+      <div>Image select karo</div>
+      <input type="file" name="image" accept="image/*" required>
+    </div>
+    <button type="submit">Process</button>
+  </form>
+  {% if error %}<div class="error">Error: {{ error }}</div>{% endif %}
+  <div class="hint">Colorful photo ya black/white line-art dono support hain — pipeline automatically detect karta hai.</div>
+</body>
+</html>

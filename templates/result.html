@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Result — Embroidery Auto-Digitizer</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 22px; }
+  img { max-width: 100%; border: 1px solid #ddd; border-radius: 8px; margin: 16px 0; background: #fafafa; }
+  .stats { background: #f5f5f5; border-radius: 8px; padding: 14px 18px; font-size: 14px; line-height: 1.7; }
+  .downloads { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .downloads a { padding: 9px 16px; background: #2b6cb0; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+  .downloads a:hover { background: #245a94; }
+  .back { display: inline-block; margin-top: 24px; color: #2b6cb0; }
+</style>
+</head>
+<body>
+  <h1>Result — {{ job_id }}</h1>
+  <img src="/outputs/{{ preview_name }}" alt="preview">
+  <div class="stats">
+    Pipeline used: <b>{{ stats.pipeline }}</b><br>
+    Regions detected: <b>{{ stats.region_count }}</b> (stitched: {{ stats.regions_used }})<br>
+    Satin regions: {{ stats.satin }} &nbsp;|&nbsp; Fill regions: {{ stats.fill }}<br>
+    Total stitch commands: {{ stats.total_stitches }}
+  </div>
+  <div class="downloads">
+    <a href="/outputs/{{ job_id }}.pes/download">Download .PES (real colors)</a>
+    <a href="/outputs/{{ job_id }}.exp/download">Download .EXP</a>
+    <a href="/outputs/{{ job_id }}.dst/download">Download .DST</a>
+    <a href="/outputs/{{ job_id }}.col/download">.COL (color sidecar)</a>
+    <a href="/outputs/{{ job_id }}.inf/download">.INF (color sidecar)</a>
+  </div>
+  <a class="back" href="/">&larr; Process another image</a>
+</body>
+</html>
