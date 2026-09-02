@@ -63,4 +63,6 @@ def download_attach(filename):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5055, debug=True)
+    # 127.0.0.1 (not 0.0.0.0) so the Werkzeug debugger isn't reachable from the
+    # local network -- debug=True + a network-exposed host is a known RCE risk.
+    app.run(host="127.0.0.1", port=5055, debug=True)
