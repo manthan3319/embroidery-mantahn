@@ -199,8 +199,16 @@ def segment_color_design(image_bgr):
     dist_to_bg = np.linalg.norm(smoothed.astype(np.float64) - bg_ref, axis=2)
     is_bg = dist_to_bg < 22.0
 
+    # Cluster in LAB with lightness heavily downweighted. A photographed satin-stitch
+    # design has real light/dark shading WITHIN a single petal/element (thread sheen,
+    # stitch-direction reflectance) -- clustering on raw RGB/lightness splits one
+    # element into concentric shade bands, which the satin-fill step then renders as
+    # nested rings instead of a clean fill. Weighting hue/chroma (a*, b*) over
+    # lightness (L*) keeps same-color shading together as one region.
     K = 12
-    fg_pixels = smoothed[~is_bg].reshape(-1, 3).astype(np.float32)
+    lab = cv2.cvtColor(smoothed, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab[:, :, 0] *= 0.25
+    fg_pixels = lab[~is_bg].reshape(-1, 3)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
     _, fg_labels, _ = cv2.kmeans(fg_pixels, K, None, criteria, 8, cv2.KMEANS_PP_CENTERS)
     fg_labels = fg_labels.flatten()
